@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+
+model User {
+  nguoi_dung_id Int @id @default(autoincrement())
+  email String @unique @db.VarChar(255)
+  mat_khau String @db.VarChar(255)
+  ho_ten String? @db.VarChar(255)
+  tuoi Int?
+  anh_dai_dien String? @db.VarChar(255)
+  hinh_anh Image[]
+  binh_luan Comment[]
+  luu_anh SavedImage[]
+  @@map("nguoi_dung")
+}
+
+model Image {
+  hinh_id Int @id @default(autoincrement())
+  ten_hinh String @db.VarChar(255)
+  duong_dan String @db.VarChar(255)
+  mo_ta String? @db.Text
+  nguoi_dung_id Int
+  nguoi_tao User @relation(fields: [nguoi_dung_id], references: [nguoi_dung_id], onDelete: Cascade)
+  binh_luan Comment[]
+  luu_anh SavedImage[]
+  @@index([nguoi_dung_id])
+  @@index([ten_hinh])
+  @@map("hinh_anh")
+}
+
+model Comment {
+  binh_luan_id Int @id @default(autoincrement())
+  nguoi_dung_id Int
+  hinh_id Int
+  ngay_binh_luan DateTime @default(now()) @db.DateTime(3)
+  noi_dung String @db.Text
+  nguoi_dung User @relation(fields: [nguoi_dung_id], references: [nguoi_dung_id], onDelete: Cascade)
+  hinh_anh Image @relation(fields: [hinh_id], references: [hinh_id], onDelete: Cascade)
+  @@index([nguoi_dung_id])
+  @@index([hinh_id, ngay_binh_luan])
+  @@map("binh_luan")
+}
+
+model SavedImage {
+  nguoi_dung_id Int
+  hinh_id Int
+  ngay_luu DateTime @default(now()) @db.DateTime(3)
+  nguoi_dung User @relation(fields: [nguoi_dung_id], references: [nguoi_dung_id], onDelete: Cascade)
+  hinh_anh Image @relation(fields: [hinh_id], references: [hinh_id], onDelete: Cascade)
+  @@id([nguoi_dung_id, hinh_id])
+  @@index([hinh_id])
+  @@map("luu_anh")
+}

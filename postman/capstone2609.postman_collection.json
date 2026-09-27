@@ -1,0 +1,622 @@
+{
+  "info": {
+    "name": "Capstone2609 - Image Sharing REST API",
+    "description": "Express + TypeScript + Prisma/MySQL. Chọn environment Local. Register → Login → chọn file và Upload → các API còn lại → Cleanup. Login tự lưu accessToken, Upload tự lưu imageId. Bảng luu_anh chỉ có API đọc theo phạm vi mới.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"mat_khau\": \"{{password}}\",\n  \"ho_ten\": \"Người dùng demo\",\n  \"tuoi\": 22\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login - save accessToken",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"mat_khau\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });",
+                  "if (pm.response.code === 200) { pm.environment.set(\"accessToken\", pm.response.json().data.accessToken); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "item": [
+        {
+          "name": "Upload - choose image file first",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/upload",
+            "description": "Chọn file JPEG/PNG/WebP ở trường image trước khi Send. Không tự gắn Content-Type.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "ten_hinh",
+                  "type": "text",
+                  "value": "Bình minh bên biển"
+                },
+                {
+                  "key": "mo_ta",
+                  "type": "text",
+                  "value": "Ảnh demo kiểm thử API"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });",
+                  "if (pm.response.code === 201) { pm.environment.set(\"imageId\", pm.response.json().data.hinh_id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images?page=1&limit=20",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Search images by name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/search?name=biển&page=1&limit=20",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Image detail with creator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/{{imageId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List comments with users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/{{imageId}}/comments?page=1&limit=20",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Add comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/images/{{imageId}}/comments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"noi_dung\": \"Ảnh đẹp quá!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Check saved status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/{{imageId}}/is-saved"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "My profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update profile - JSON",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/users/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ho_ten\": \"Tên đã cập nhật\",\n  \"tuoi\": 25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update avatar - choose file first",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/profile",
+            "description": "Chọn file avatar trước khi Send. Có thể dùng JSON anh_dai_dien URL hoặc null thay cho file.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "ho_ten",
+                  "type": "text",
+                  "value": "Người dùng demo"
+                },
+                {
+                  "key": "tuoi",
+                  "type": "text",
+                  "value": "25"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "My saved images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/saved-images?page=1&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "My created images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/created-images?page=1&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Security checks",
+      "item": [
+        {
+          "name": "Missing token - 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/profile",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Reject body user ID - 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/images/{{imageId}}/comments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"noi_dung\": \"Không được giả mạo chủ thể\",\n  \"nguoi_dung_id\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Duplicate email - 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"mat_khau\": \"{{password}}\",\n  \"ho_ten\": \"Người dùng demo\",\n  \"tuoi\": 22\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Invalid pagination - 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images?page=0&limit=1000",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cleanup - run last",
+      "item": [
+        {
+          "name": "Delete own image",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/{{imageId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Deleted image returns 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/images/{{imageId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Response envelope\", () => { const body = pm.response.json(); pm.expect(body).to.have.all.keys(\"statusCode\", \"message\", \"data\", \"error\"); pm.expect(body.statusCode).to.eql(pm.response.code); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

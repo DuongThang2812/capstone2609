@@ -1,0 +1,50 @@
+{
+  "name": "capstone2609",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Image sharing REST API - Express, TypeScript, Prisma and MySQL",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "prisma generate && tsc -p tsconfig.json && node scripts/copy-prisma-engine.mjs",
+    "start": "node dist/server.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "predev": "npm run db:generate",
+    "pretest": "npm run db:generate",
+    "prestart": "npm run build"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "5.2.1",
+    "express-rate-limit": "^8.0.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "2.4.0",
+    "sharp": "0.35.5",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^6.0.3",
+    "prisma": "6.19.3",
+    "supertest": "^7.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.0"
+  }
+}

@@ -1,0 +1,44 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import type { PrismaClient } from './generated/prisma/client.js';
+import { env } from './config/env.js';
+import { UserRepository } from './repositories/user.repository.js';
+import { ImageRepository } from './repositories/image.repository.js';
+import { CommentRepository } from './repositories/comment.repository.js';
+import { AuthService } from './services/auth.service.js';
+import { TokenService } from './services/token.service.js';
+import { ImageService } from './services/image.service.js';
+import { UserService } from './services/user.service.js';
+import { StorageService } from './services/storage.service.js';
+import { AuthController } from './controllers/auth.controller.js';
+import { ImageController } from './controllers/image.controller.js';
+import { UserController } from './controllers/user.controller.js';
+import { authRoutes } from './routes/auth.routes.js';
+import { imageRoutes } from './routes/image.routes.js';
+import { userRoutes } from './routes/user.routes.js';
+import { verifyToken } from './middlewares/auth.middleware.js';
+import { createUpload } from './middlewares/upload.middleware.js';
+import { errorHandler, notFound } from './middlewares/error.middleware.js';
+
+export function createApp(db: PrismaClient, uploadDirectory = env.UPLOAD_DIR) {
+  const app = express();
+  const users = new UserRepository(db);
+  const images = new ImageRepository(db);
+  const comments = new CommentRepository(db);
+  const storage = new StorageService(uploadDirectory);
+  const tokens = new TokenService(env.JWT_SECRET, env.JWT_EXPIRES_IN_SECONDS);
+  const auth = verifyToken(tokens, users);
+  const upload = createUpload(env.MAX_UPLOAD_BYTES);
+  app.disable('x-powered-by');
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(cors({ origin: env.CORS_ORIGIN.split(',').map((s) => s.trim()) }));
+  app.use(express.json({ limit: '32kb' }));
+  app.use('/uploads', express.static(uploadDirectory, { dotfiles: 'deny', index: false, maxAge: '1d' }));
+  app.use('/api/auth', authRoutes(new AuthController(new AuthService(users, tokens, env.BCRYPT_ROUNDS))));
+  app.use('/api/images', imageRoutes(new ImageController(new ImageService(images, comments, storage)), auth, upload));
+  app.use('/api/users', userRoutes(new UserController(new UserService(users, images, storage)), auth, upload));
+  app.use(notFound);
+  app.use(errorHandler);
+  return app;
+}

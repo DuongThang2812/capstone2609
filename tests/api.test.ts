@@ -1,0 +1,188 @@
+import 'dotenv/config';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readdir, rm, access } from 'node:fs/promises';
+import path from 'node:path';
+import request from 'supertest';
+import sharp from 'sharp';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { createDatabase } from '../src/config/db.js';
+import { createApp } from '../src/app.js';
+import { env } from '../src/config/env.js';
+
+test('REST API integration against an isolated MySQL test database', async (t) => {
+  const databaseUrl = process.env['TEST_DATABASE_URL'];
+  assert.ok(databaseUrl, 'Set TEST_DATABASE_URL to a separate database ending in _test');
+  const databaseName = new URL(databaseUrl).pathname.slice(1);
+  assert.match(databaseName, /^[a-zA-Z0-9_]+_test$/, 'Refusing to test against a non-test database');
+  execFileSync(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], {
+    env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: 'pipe',
+  });
+  const work = path.resolve('work');
+  await mkdir(work, { recursive: true });
+  const uploadDirectory = await mkdtemp(path.join(work, 'integration-'));
+  const db = createDatabase(databaseUrl);
+  const app = createApp(db, uploadDirectory);
+  const api = request(app);
+  const run = randomUUID();
+  const emailA = `a-${run}@example.test`;
+  const emailB = `b-${run}@example.test`;
+  const password = 'Valid-password-123!';
+  const fixture = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#336699' } }).png().toBuffer();
+  let tokenA = '';
+  let tokenB = '';
+  let userA = 0;
+  let userB = 0;
+  let imageId = 0;
+  let imagePath = '';
+  const bearer = (token: string) => `Bearer ${token}`;
+  try {
+    await t.test('not-found and malformed JSON use the response envelope', async () => {
+      await api.get('/api/health').expect(404);
+      const missing = await api.get('/api/does-not-exist').expect(404);
+      assert.equal(missing.body.data, null);
+      assert.equal(missing.body.error.code, 'NOT_FOUND');
+      const invalid = await api.post('/api/auth/login').set('Content-Type', 'application/json').send('{bad').expect(400);
+      assert.equal(invalid.body.error.code, 'INVALID_JSON');
+    });
+    await t.test('registration hashes passwords, rejects duplicates and invalid input', async () => {
+      await api.post('/api/auth/register').send({ email: 'bad', mat_khau: '123', ho_ten: '' }).expect(400);
+      const a = await api.post('/api/auth/register').send({ email: emailA.toUpperCase(), mat_khau: password, ho_ten: 'Người A', tuoi: 22 }).expect(201);
+      const b = await api.post('/api/auth/register').send({ email: emailB, mat_khau: password, ho_ten: 'Người B', tuoi: 23 }).expect(201);
+      userA = a.body.data.nguoi_dung_id as number;
+      userB = b.body.data.nguoi_dung_id as number;
+      assert.equal(a.body.data.email, emailA);
+      assert.equal(a.body.data.mat_khau, undefined);
+      const record = await db.user.findUniqueOrThrow({ where: { nguoi_dung_id: userA } });
+      assert.notEqual(record.mat_khau, password);
+      assert.equal(await bcrypt.compare(password, record.mat_khau), true);
+      await api.post('/api/auth/register').send({ email: emailA, mat_khau: password, ho_ten: 'Duplicate' }).expect(409);
+      await api.post('/api/auth/register').send({ email: 'x@example.test', mat_khau: '🙂'.repeat(25), ho_ten: 'Unicode' }).expect(400);
+    });
+    await t.test('login and bearer authentication reject expired, fake and missing tokens', async () => {
+      await api.post('/api/auth/login').send({ email: emailA, mat_khau: 'wrong-password' }).expect(401);
+      const a = await api.post('/api/auth/login').send({ email: emailA, mat_khau: password }).expect(200);
+      const b = await api.post('/api/auth/login').send({ email: emailB, mat_khau: password }).expect(200);
+      tokenA = a.body.data.accessToken as string;
+      tokenB = b.body.data.accessToken as string;
+      assert.ok(tokenA);
+      assert.equal(a.body.data.user.mat_khau, undefined);
+      await api.get('/api/users/profile').expect(401);
+      await api.get('/api/users/profile').set('Authorization', 'Bearer fake-token').expect(401);
+      const expired = jwt.sign({}, env.JWT_SECRET, { subject: String(userA), issuer: 'capstone2609', audience: 'capstone2609-api', expiresIn: -1 });
+      await api.get('/api/users/profile').set('Authorization', bearer(expired)).expect(401);
+      const deleted = jwt.sign({}, env.JWT_SECRET, { subject: '2147483647', issuer: 'capstone2609', audience: 'capstone2609-api', expiresIn: 60 });
+      await api.get('/api/users/profile').set('Authorization', bearer(deleted)).expect(401);
+    });
+    await t.test('all private routes require JWT before uploading or writing', async () => {
+      await api.put('/api/users/profile').send({ ho_ten: 'Bad' }).expect(401);
+      await api.get('/api/users/saved-images').expect(401);
+      await api.get('/api/users/created-images').expect(401);
+      await api.post('/api/images/upload').attach('image', fixture, 'a.png').expect(401);
+      await api.post('/api/images/1/comments').send({ noi_dung: 'Hi' }).expect(401);
+      await api.post('/api/images/1/save').expect(404);
+      await api.get('/api/images/1/is-saved').expect(401);
+      await api.delete('/api/images/1').expect(401);
+    });
+    await t.test('upload validates real image content, size and body; no orphan files', async () => {
+      const auth = bearer(tokenA);
+      await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', 'Missing').expect(400);
+      await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', 'Fake').attach('image', Buffer.from('not an image'), { filename: 'fake.png', contentType: 'image/png' }).expect(415);
+      await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', 'SVG').attach('image', Buffer.from('<svg/>'), { filename: 'x.svg', contentType: 'image/svg+xml' }).expect(415);
+      await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', 'Big').attach('image', Buffer.alloc(env.MAX_UPLOAD_BYTES + 1), { filename: 'big.png', contentType: 'image/png' }).expect(413);
+      await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', 'Spoof').field('nguoi_dung_id', String(userB)).attach('image', fixture, 'a.png').expect(400);
+      await api.post('/api/images/upload').set('Authorization', auth).attach('image', fixture, 'a.png').expect(400);
+      assert.equal((await readdir(uploadDirectory)).length, 0);
+      const result = await api.post('/api/images/upload').set('Authorization', auth).field('ten_hinh', `Phong cảnh ${run}`).field('mo_ta', 'Ảnh kiểm thử').attach('image', fixture, '../../a.png').expect(201);
+      imageId = result.body.data.hinh_id as number;
+      imagePath = result.body.data.duong_dan as string;
+      assert.equal(result.body.data.nguoi_dung_id, userA);
+      assert.match(imagePath, /^\/uploads\/[0-9a-f-]+\.webp$/);
+      const binary = await api.get(imagePath).expect(200);
+      assert.match(binary.headers['content-type'] as string, /image\/webp/);
+      assert.equal((await sharp(binary.body as Buffer).metadata()).format, 'webp');
+    });
+    await t.test('list/search/detail/comment listing and pagination work', async () => {
+      const list = await api.get('/api/images?page=1&limit=1').expect(200);
+      assert.equal(list.body.data.items.length, 1);
+      assert.equal(list.body.data.pagination.limit, 1);
+      await api.get('/api/images?limit=101').expect(400);
+      await api.get('/api/images?page=0').expect(400);
+      await api.get('/api/images/search').expect(400);
+      const search = await api.get('/api/images/search').query({ name: run }).expect(200);
+      assert.equal(search.body.data.items[0].hinh_id, imageId);
+      const detail = await api.get(`/api/images/${imageId}`).expect(200);
+      assert.equal(detail.body.data.nguoi_tao.email, emailA);
+      assert.equal(detail.body.data.nguoi_tao.mat_khau, undefined);
+      await api.get('/api/images/not-a-number').expect(400);
+      await api.get('/api/images/2147483647').expect(404);
+      await api.get('/api/images/2147483647/comments').expect(404);
+      const empty = await api.get(`/api/images/${imageId}/comments`).expect(200);
+      assert.equal(empty.body.data.pagination.total, 0);
+    });
+    await t.test('comments get their author only from JWT', async () => {
+      await api.post(`/api/images/${imageId}/comments`).set('Authorization', bearer(tokenB)).send({ noi_dung: ' ', nguoi_dung_id: userA }).expect(400);
+      const comment = await api.post(`/api/images/${imageId}/comments`).set('Authorization', bearer(tokenB)).send({ noi_dung: 'Ảnh đẹp quá!' }).expect(201);
+      assert.equal(comment.body.data.nguoi_dung_id, userB);
+      assert.equal(comment.body.data.nguoi_dung.mat_khau, undefined);
+      const list = await api.get(`/api/images/${imageId}/comments`).expect(200);
+      assert.equal(list.body.data.pagination.total, 1);
+    });
+    await t.test('saved-image queries use the JWT identity', async () => {
+      const path = `/api/images/${imageId}`;
+      const before = await api.get(`${path}/is-saved`).set('Authorization', bearer(tokenB)).expect(200);
+      assert.equal(before.body.data.isSaved, false);
+      await api.get(`${path}/is-saved?userId=${userA}`).set('Authorization', bearer(tokenB)).expect(400);
+      await db.savedImage.create({ data: { nguoi_dung_id: userB, hinh_id: imageId } });
+      assert.equal(await db.savedImage.count({ where: { nguoi_dung_id: userB, hinh_id: imageId } }), 1);
+      const after = await api.get(`${path}/is-saved`).set('Authorization', bearer(tokenB)).expect(200);
+      assert.equal(after.body.data.isSaved, true);
+      const a = await api.get('/api/users/saved-images').set('Authorization', bearer(tokenA)).expect(200);
+      assert.equal(a.body.data.pagination.total, 0);
+      const b = await api.get('/api/users/saved-images').set('Authorization', bearer(tokenB)).expect(200);
+      assert.equal(b.body.data.items[0].hinh_anh.hinh_id, imageId);
+      await api.post(`${path}/save`).set('Authorization', bearer(tokenB)).expect(404);
+      await api.delete(`${path}/save`).set('Authorization', bearer(tokenB)).expect(404);
+    });
+    await t.test('profile edits, avatar uploads and created-image lists are isolated', async () => {
+      const auth = bearer(tokenA);
+      const profile = await api.get('/api/users/profile').set('Authorization', auth).expect(200);
+      assert.equal(profile.body.data.nguoi_dung_id, userA);
+      assert.equal(profile.body.data.mat_khau, undefined);
+      await api.put('/api/users/profile').set('Authorization', auth).send({ nguoi_dung_id: userB, ho_ten: 'Hack' }).expect(400);
+      await api.put('/api/users/profile').set('Authorization', auth).send({}).expect(400);
+      await api.put('/api/users/profile').set('Authorization', auth).send({ tuoi: -1 }).expect(400);
+      const updated = await api.put('/api/users/profile').set('Authorization', auth).send({ ho_ten: 'Tên mới', tuoi: 30 }).expect(200);
+      assert.equal(updated.body.data.ho_ten, 'Tên mới');
+      const avatar = await api.put('/api/users/profile').set('Authorization', auth).field('tuoi', '31').attach('avatar', fixture, 'avatar.png').expect(200);
+      const avatarPath = path.join(uploadDirectory, path.basename(avatar.body.data.anh_dai_dien as string));
+      await access(avatarPath);
+      await api.put('/api/users/profile').set('Authorization', auth).send({ anh_dai_dien: null }).expect(200);
+      await assert.rejects(access(avatarPath));
+      const created = await api.get('/api/users/created-images').set('Authorization', auth).expect(200);
+      assert.equal(created.body.data.items[0].hinh_id, imageId);
+      const other = await api.get('/api/users/created-images').set('Authorization', bearer(tokenB)).expect(200);
+      assert.equal(other.body.data.pagination.total, 0);
+    });
+    await t.test('only the owner can delete; comments/saves cascade and disk file is removed', async () => {
+      await api.delete(`/api/images/${imageId}`).set('Authorization', bearer(tokenB)).expect(403);
+      await api.get(imagePath).expect(200);
+      await api.delete(`/api/images/${imageId}`).set('Authorization', bearer(tokenA)).expect(200);
+      await api.get(`/api/images/${imageId}`).expect(404);
+      await api.get(imagePath).expect(404);
+      assert.equal(await db.comment.count({ where: { hinh_id: imageId } }), 0);
+      assert.equal(await db.savedImage.count({ where: { hinh_id: imageId } }), 0);
+      assert.equal((await readdir(uploadDirectory)).length, 0);
+    });
+  } finally {
+    await db.user.deleteMany({ where: { email: { in: [emailA, emailB] } } });
+    await db.$disconnect();
+    // Delete only the unique directory created by this test inside work/.
+    assert.equal(path.dirname(path.resolve(uploadDirectory)), work);
+    assert.ok(path.basename(uploadDirectory).startsWith('integration-'));
+    await rm(uploadDirectory, { recursive: true, force: true });
+  }
+});
