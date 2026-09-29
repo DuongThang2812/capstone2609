@@ -24,7 +24,6 @@ export class StorageService {
     return `/uploads/${filename}`;
   }
   async remove(url: string | null | undefined): Promise<void> {
-    // Never use an arbitrary user URL or path as a filesystem target.
     const match = /^\/uploads\/([0-9a-f-]{36}\.webp)$/.exec(url ?? '');
     if (!match?.[1]) return;
     try { await unlink(path.join(this.directory, match[1])); }

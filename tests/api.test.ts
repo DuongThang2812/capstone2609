@@ -180,7 +180,6 @@ test('REST API integration against an isolated MySQL test database', async (t) =
   } finally {
     await db.user.deleteMany({ where: { email: { in: [emailA, emailB] } } });
     await db.$disconnect();
-    // Delete only the unique directory created by this test inside work/.
     assert.equal(path.dirname(path.resolve(uploadDirectory)), work);
     assert.ok(path.basename(uploadDirectory).startsWith('integration-'));
     await rm(uploadDirectory, { recursive: true, force: true });

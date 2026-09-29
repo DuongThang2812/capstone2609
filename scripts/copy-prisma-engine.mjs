@@ -2,7 +2,6 @@ import { copyFile, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// tsc compiles TypeScript but does not copy Prisma's native query engine.
 const root = fileURLToPath(new URL('../', import.meta.url));
 const source = path.join(root, 'src/generated/prisma');
 const destination = path.join(root, 'dist/generated/prisma');
